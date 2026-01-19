@@ -1,0 +1,15 @@
+real Rin = 0.5;
+real Rout = 2.0;
+
+border Top(t=0,1) { x = -Rout + 2*Rout*t; y = 0; label = 1; }
+border OuterArc(t=pi,3*pi/2) { x = Rout*cos(t); y = Rout*sin(t); label = 2; }
+border Right(t=0,1) { x = 0; y = Rout - (Rout-Rin)*t; label = 3; }
+border InnerArc(t=3*pi/2,pi) { x = Rin*cos(t); y = Rin*sin(t); label = 4; }
+
+// Plot just the borders to see if they connect
+plot(Top(10) + OuterArc(10) + Right(10) + InnerArc(10), wait=true, 
+     cmm="Check border connections");
+
+// Then try to create the mesh
+// int n = 10;
+// mesh Th = buildmesh(Top(2*n) + OuterArc(n) + Right(n) + InnerArc(n));

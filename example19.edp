@@ -1,0 +1,29 @@
+int n = 40;
+
+border Top(t=0,1){x = -2.+ 1.5*t; y = 0;label = 1;}
+border Heater(t=pi,1.5*pi){ x = 0.5*cos(t); y = 0.5*sin(t); label = 2;}
+border Out(t=0,1){ x = 0; y = -0.5 -1.5*t; label = 3;}
+border ColdArc(t=1.5*pi,pi){ x = 2.*cos(t); y = 2.*sin(t); label = 4;}
+
+mesh Th = buildmesh( Top(-n) + Heater(-n) + Out(-n) + ColdArc(-2*n) );
+plot(Th, wait=true);
+
+fespace Vh(Th, P1);
+Vh u, v;
+
+func Ux = -y;
+func Uy =  x;
+
+
+real nu = 0.1;
+
+
+solve Assignment(u, v) =
+    int2d(Th)(
+        nu*( dx(u)*dx(v) + dy(u)*dy(v) )  
+      + ( Ux*dx(u) + Uy*dy(u) )*v      
+    )
+  - int1d(Th, 2)( nu*v)                    
+  + on(1, u = 1);  
+
+plot(u, value = true, fill = true, wait = true, cmm = "Temperature u");                          

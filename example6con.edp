@@ -1,0 +1,11 @@
+mesh sh = readmesh("HeatExchangerMesh.msh");
+
+fespace Wh(sh,P1);
+Wh us, vs;
+
+solve b(us,vs) 
+    = int2d(sh) (dx(us)*dx(vs) + dy(us)*dy(vs)) 
+    + on(1, us = 0)
+    + on(98, us = 1)
+    + on(98, us = -1);
+plot(us);

@@ -1,0 +1,21 @@
+// Define the computational domain and mesh 
+border C(t = 0, 2*pi) { x = cos(t); y = sin(t); }
+
+mesh Th = buildmesh(C(100));
+plot(Th, wait = 1, cmm = "Mesh");
+// Define finite element space
+fespace Vh(Th, P1);
+Vh u, v;
+// Define f
+func f = x*y;
+
+real cpu = clock();
+// Solve the variational problem
+solve Problem(u,v,solver = LU) = 
+    int2d(Th)(dx(u)*dx(v) + dy(u)*dy(v))
+    - int2d(Th)(f*v)
+    + on(C, u = 0);
+
+plot(u,wait = 0, value = 1, nbiso = 20, cmm = "Solution u");
+
+cout << "CPU time: " << clock() - cpu << " seconds." << endl;

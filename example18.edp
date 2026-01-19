@@ -1,0 +1,42 @@
+// FINAL WORKING QUARTER-ANNULUS MESH
+
+// real Rin  = 0.5;
+// real Rout = 2.0;
+
+// ---- Border definitions ----
+// 1) Top: (-Rout,0) → (-Rin,0)
+border Top(t=0,1){
+    x = -0.5 - 1.5*t;
+    y = 0;
+    label = 1;
+}
+
+// 2) Inner arc: (-Rin,0) → (0,-Rin)
+border Heater(t=pi,1.5*pi){   // pi → 3pi/2
+    x = 2.*cos(t);
+    y = 2.*sin(t);
+    label = 2;
+}
+
+// 3) Vertical: 
+border Out(t=0,1){
+    x = 0;
+    y = -2. +1.5*t;
+    label = 3;
+}
+
+// 4) Outer arc: (0,-Rout) → (-Rout,0)
+border ColdArc(t=1.5*pi,pi){
+
+    x = 0.5*cos(t);
+    y = 0.5*sin(t);
+    label = 4;
+}
+
+// ---- Print endpoints to confirm ----
+
+
+// ---- Mesh ----
+int n = 10;
+mesh Th = buildmesh( Top(n) + Heater(n) + Out(n) + ColdArc(2*n) );
+plot(Th, wait=true);

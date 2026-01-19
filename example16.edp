@@ -1,0 +1,13 @@
+real Rin = 0.5;
+real Rout = 2.0;
+real n = 20;
+// Create a full annular mesh first
+border C1(t=0, 2*pi) { x=Rout*cos(t); y=Rout*sin(t); label=1; }
+border C2(t=0, 2*pi) { x=Rin*cos(t); y=Rin*sin(t); label=2; }
+
+mesh ThFull = buildmesh(C1(4*n) + C2(-20*n));
+
+// Now extract only the first quadrant (x>0, y>0)
+mesh Th = trunc(ThFull, (x<0) && (y<0), label=10);
+
+plot(Th, wait=true, cmm="Quarter annular mesh");

@@ -1,0 +1,136 @@
+// temperature_rotating_full_fixed.edp
+// Steady advection–diffusion on your geometry
+// Corrected version for older FreeFEM (uses Th(i).x syntax)
+
+// -------------------- PARAMETERS --------------------
+real Rbig = 2.0;        // radius of the big curved boundary (left)
+real RectX = 1.0;       // rectangle right x coordinate
+real RectTop = 2.0;     // top y
+real RectBot = -2.0;    // bottom y
+
+real nu = 1./50.;       // initial viscosity
+real nufinal = 1./200.; // final viscosity
+real cnu = 0.5;         // continuation factor
+int maxSteps = 20;
+int plotpause = 1;
+
+// -------------------- GEOMETRY (matching your picture) --------------------
+border GammaO(t = -pi/2, pi/2) { // big arc
+    x = Rbig * cos(t);
+    y = Rbig * sin(t);
+    label = 1;
+}
+border Gamma0(t = 0, 1) { // top horizontal (0,2) → (1,2)
+    x = t*RectX;
+    y = RectTop;
+    label = 2;
+}
+border GammaH(t = 0, pi/2) { // heated semicircle centered at (1,2)
+    real cx = RectX, cy = RectTop, r = 1.0;
+    x = cx + r*cos(-t);
+    y = cy + r*sin(-t);
+    label = 3;
+}
+border GammaOut(t = RectBot, RectTop) { // right vertical
+    x = RectX;
+    y = t;
+    label = 4;
+}
+border Bottom(t = 0, 1) { // bottom (1,-2) → (0,-2)
+    x = RectX - t*RectX;
+    y = RectBot;
+    label = 5;
+}
+
+mesh Th = buildmesh(GammaO(80) + Gamma0(12) + GammaH(40) + GammaOut(80) + Bottom(12));
+plot(Th, cmm="Mesh", wait=plotpause);
+
+// -------------------- SPACES --------------------
+fespace Vh(Th, P2);
+Vh u, v;
+Vh uold;
+
+// -------------------- VELOCITY FIELD --------------------
+func U1 = -y;
+func U2 =  x;
+
+// -------------------- BOUNDARY LABELS --------------------
+int labelGammaO   = 1; 
+int labelGamma0   = 2; 
+int labelGammaH   = 3; 
+int labelGammaOut = 4;
+
+// -------------------- SUPG COMPUTATION --------------------
+real totalArea = int2d(Th)(1.0);
+int  nT = Th.nt;
+real havg = sqrt(2.0 * totalArea / nT);
+
+// compute rmax using OLD syntax: Th(i).x / Th(i).y
+real rmax = 0.0;
+for (int iv = 0; iv < Th.nv; ++iv) {
+    real xv = Th(iv).x;
+    real yv = Th(iv).y;
+    real rr = sqrt(xv*xv + yv*yv);
+    if (rr > rmax) rmax = rr;
+}
+if (rmax < 1e-8) rmax = 1.0;
+
+real tauglobal = havg / (2.0 * rmax + 1e-10);
+cout << "SUPG tau = " << tauglobal << endl;
+
+// -------------------- NEUMANN DATA --------------------
+func gNeumann = 1.0;
+
+// -------------------- CONTINUATION LOOP --------------------
+for (int step = 0; step < maxSteps; ++step) {
+
+    cout << "\n=== Step " << step << "  nu = " << nu
+         << "  Rey = " << 1./nu << " ===\n";
+
+    real stabamp = 1.0;
+    if (nu < 1e-2) stabamp = 1.5;
+    if (nu < 5e-3) stabamp = 2.5;
+
+    real tau = tauglobal * stabamp;
+
+    problem Temperature(u, v, solver=UMFPACK) =
+        int2d(Th)(
+            nu*(dx(u)*dx(v) + dy(u)*dy(v))
+          + (U1*dx(u) + U2*dy(u)) * v
+          + tau*(U1*dx(u) + U2*dy(u))*(U1*dx(v) + U2*dy(v))
+        )
+        - int1d(Th, labelGammaH)(nu * gNeumann * v)
+        + on(labelGammaO, u=0)
+        + on(labelGamma0, u=0);
+
+    Temperature;
+
+    plot(u, value=true, fill=true,
+         cmm="Temperature  nu="+nu, wait=plotpause);
+
+    uold = u;
+
+    // if (nu <= nufinal + 1e-12) {
+    //     cout << "Reached target viscosity" << endl;
+    //     break;
+    // }
+
+    // real newnu = max(nufinal, nu*cnu);
+    // cout << " -> decreasing nu: " << nu << " → " << newnu << endl;
+    // nu = newnu;
+
+
+    if (nu <= nufinal + 1e-12) {
+    cout << "Reached target viscosity" << endl;
+    break;
+}
+
+    real newnu = max(nufinal, nu*cnu);
+    cout << " -> decreasing nu: " << nu << " to " << newnu << endl;
+
+    nu = newnu;
+
+}
+
+plot(u, value=true, fill=true, cmm="Final solution", wait=1);
+cout << "Done.\n";

@@ -1,0 +1,50 @@
+int n = 40;
+
+border Top(t=0,1){ x = -2 + 1.5*t; y = 0; label = 1; }
+border Heater(t=pi,1.5*pi){ x = 0.5*cos(t); y = 0.5*sin(t); label = 2; }
+border Out(t=0,1){ x = 0; y = -0.5 - 1.5*t; label = 3; }
+border ColdArc(t=1.5*pi,pi){ x = 2*cos(t); y = 2*sin(t); label = 4; }
+
+// Mesh
+mesh Th = buildmesh( Top(-n) + Heater(-n) + Out(-n) + ColdArc(-2*n) );
+plot(Th, wait=true, cmm="Mesh");
+
+// FE space
+fespace Vh(Th, P1);
+Vh u, v;
+
+// Velocity field
+func Ux = -y;
+func Uy =  x;
+
+// Values of viscosity to test
+real[int] nuList = [0.9,0.8,0.7,0.5, 0.2, 0.1,0.01, 0.02,0.05, 0.001, 0.005, 0.0001, 0.0005,0.002,0.0002];
+
+for (int k=0; k<nuList.n; k++)
+{
+    real nu = nuList[k];
+    cout << "Solving for nu = " << nu << endl;
+
+    solve Assignment(u, v) =
+        int2d(Th)(
+            nu*( dx(u)*dx(v) + dy(u)*dy(v) )
+          + ( Ux*dx(u) + Uy*dy(u) )*v
+        )
+      - int1d(Th, 2)( nu*v )
+      + on(1, u = 0);
+
+    plot(u, value=true, fill=true,
+         cmm = "Temperature u for nu = " + nu, wait=true);
+
+    // ---- Save EPS ----
+    string epsName = "solution_nu_" + nu + ".eps";
+    ofstream ff(epsName);
+    plot(u, value=true, fill=true, cmm=" ", ps=epsName);
+
+    // ---- Convert EPS → PNG ----
+    string pngName = "solution_nu_" + nu + ".png";
+    string cmd = "convert " + epsName + " " + pngName;
+    exec(cmd);
+
+    cout << "Saved PNG: " << pngName << endl;
+}

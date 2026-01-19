@@ -1,0 +1,93 @@
+int nel = 50;
+int GammaCold = 1;
+int GammaWarm = 2;
+int GammaN = 3;
+
+// ================================
+// Outer boundary
+// ================================
+border bottom(t = -1,1) { 
+    x = t; 
+    y = -1; 
+    label = GammaCold;  
+}
+
+border right(t = -pi/2, pi/2) { 
+    x = 1 + cos(t); 
+    y = sin(t); 
+    label = GammaN;  
+}
+
+border top(t = -1,1) { 
+    x = -t; 
+    y = 1; 
+    label = GammaCold;  
+}
+
+border left(t = -1,1) { 
+    x = -1; 
+    y = -t; 
+    label = GammaN;  
+}
+
+// ================================
+// First internal circle (center heater)
+// ================================
+border heater(t = 0,2*pi) { 
+    x = 0.5*cos(t); 
+    y = 0.5+0.5*sin(t); 
+    label = GammaWarm;  
+}
+
+// ================================
+// Second internal circle (small, safe)
+// Center = (-0.5, 0)
+// Radius = 0.15
+// ================================
+border circle2(t = 0,2*pi) {
+    x = -0.2 + 0.15*cos(t);
+    y =  -0.2 + 0.15*sin(t);
+    label = GammaWarm;
+}
+
+// ================================
+// Build mesh with holes
+// ================================
+mesh Th = buildmesh(
+      bottom(nel)
+    + right(2*nel)
+    + top(nel)
+    + left(nel)
+    + heater(nel)    // negative orientation = hole
+    + circle2(-50)   // second hole
+);
+
+plot(Th, wait = 1, cmm = "Mesh");
+
+// ================================
+// FEM Problem setup
+// ================================
+fespace Vh(Th, P1);
+Vh u, v;
+
+Vh warm = 100;
+Vh cold = 0;
+Vh Neumann = 0;
+
+Vh Kappa = 1.0;
+Vh f = 1.0;
+
+// ================================
+// Variational problem (Poisson)
+// ================================
+solve Problem(u,v) = 
+      int2d(Th)(Kappa*(dx(u)*dx(v) + dy(u)*dy(v)))
+    - int2d(Th)(f*v)
+    + on(GammaWarm, u = warm)
+    + on(GammaCold, u = cold)
+    - int1d(Th, GammaN)(Neumann*v);
+
+// ================================
+// Plot result
+// ================================
+plot(u, wait = 0, fill = 1, value = 1, nbiso = 10, cmm = "Temperature Distribution");

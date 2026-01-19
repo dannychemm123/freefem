@@ -1,0 +1,49 @@
+load "iovtk"
+
+verbosity = 0;
+real theta = 4.*pi/3.;
+real a = 1;
+real b = 1;
+func f = -4*(cos(x^2+y^2)-(x^2+y^2)*sin(x^2+y^2));
+func phiexact = sin(x^2+y^2-1);
+
+border Gamma1(t = 0., theta){x = a*cos(t);y= b*sin(t);}
+border Gamma2(t = theta, 2.*pi){x = a*cos(t);y=b*sin(t);}
+
+real[int] L2error(2);
+
+for(int n = 0; n<2; n++){
+    mesh Th = buildmesh(Gamma1(20*(n+1))+Gamma2(10*(n+1)));
+
+    fespace Vh(Th, P2);
+    Vh phi, w;
+    solve Laplace(phi,w)
+        = int2d(Th)(
+        dx(phi)*dx(w) + dy(phi)*dy(w))
+        - int2d(Th)(f*w)
+        -int1d(Th,Gamma2)(
+            2*w
+        )
+        + on(Gamma1, phi = 0);
+    plot(Th, phi, wait=true, cmm = "Solution on mesh n="+(n),ps = "Solution.eps");
+    L2error[n] = sqrt(int2d(Th)((phi - phiexact)^2));
+//     {
+//     ofstream ff("graph.txt");
+//     for (int i = 0; i < Th.nt; i++)
+//     {
+//     for (int j = 0; j < 3; j++)
+//     ff << Th[i][j].x << " "<< Th[i][j].y << " " << phi[][Vh(i,j)] << endl;
+//     ff << Th[i][0].x << " " << Th[i][0].y << " " << phi[][Vh(i,0)] << "\n\n\n";
+//     }
+// }
+    string vtkname = "solution_" + n + ".vtk";
+    savevtk(vtkname, Th, phi, dataname = "phi");
+
+    cout << "Saved VTK file: " << vtkname << endl;
+
+}
+
+for(int n = 0; n<2;n++)
+    cout << "L2 error on mesh n="<<n<<" is "<<L2error[n]<<endl;
+cout << "Convergence rate: " << log(L2error[0]/L2error[1])/log(2.) << endl;
+

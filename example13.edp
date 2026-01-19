@@ -1,0 +1,61 @@
+// --- PARAMETERS ---
+real R = 5.;
+real L = 15.;
+real nu = 1./50.;       // thermal diffusivity
+real nufinal = 1/200.;  // smaller = advection-dominated
+real cnu = 0.5;
+real eps = 1e-8;        // solver tol for linear solve (not Newton now)
+verbosity = 0;
+
+// --- MESH (reuse/modify from your original) ---
+// Make sure boundary labels correspond to the intended Gamma_0, Gamma_h, Gamma_out
+border cc(t=0, 2*pi){ x=cos(t)/2.; y=sin(t)/2.; label=10; }    // small arc (use label 10 for example)
+border ce(t=pi/2, 3*pi/2){ x=cos(t)*R; y=sin(t)*R; label=1; } // large arc (label=1) - maybe Gamma_0 ?
+border beb(tt=0, 1){ real t=tt^1.2; x=t*L; y=-R; label=3; }    // bottom inlet/outlet (label=3)
+border beu(tt=1, 0){ real t=tt^1.2; x=t*L; y=R; label=1; }     // top boundary (label=1) - use label 1 as Gamma_0 (Dirichlet u=0)
+border beo(t=-R, R){ x=L; y=t; label=4; }                      // vertical right (label=4) - use label 4 as Gamma_out or Gamma_h
+border bei(t=-R/4, R/4){ x=L/2; y=t; label=5; }                // interior small segment (label=5)
+mesh Th = buildmesh(cc(-50) + ce(30) + beb(20) + beu(20) + beo(40) + bei(10));
+plot(Th, cmm="mesh");
+
+// --- FINITE ELEMENT SPACE ---
+fespace Vh(Th, P2);   // choose P2 or P1 as you prefer
+Vh u, v;
+
+// --- VELOCITY FIELD U (divergence-free rotation) ---
+// For rotation with |U| = r (r = sqrt(x^2+y^2)), a simple choice is U = (-y, x)
+func U1 = -y;
+func U2 =  x;
+
+// optional: scale to get |U|=r exactly?  Here |(-y,x)| = sqrt(x^2+y^2) = r already
+
+// --- LABELS ---
+// Decide which labels correspond to Gamma_0 (Dirichlet), Gamma_h (heated Neumann), Gamma_out (zero Neumann)
+int labelGamma0 = 1;  // top boundary in figure (Dirichlet u=0)
+int labelGammah = 5;  // heated small red arc — change to the label you used
+int labelGammaOut = 4;// right vertical (natural zero Neumann)
+
+// --- STABILIZATION PARAMETERS (for small nu) ---
+real stabalpha = 0.0; // set >0 to add SUPG-like stabilization; start with 0
+// you may set e.g. stab_alpha = 0.1 or compute tau per element for SUPG
+
+// --- VARIATIONAL FORM ---
+// Weak form: nu*int grad(u).grad(v) + int (U·grad u) * v = nu * int_{Gamma_h} g * v
+// with Neumann: d_n u = g (g=1 on Gamma_h, g=0 on Gamma_out)
+// Note RHS uses nu*g because boundary term arises from integration by parts:
+//  nu int grad(u).grad(v) - nu int_{bdry} (d_n u) v + int (U·grad u) v = 0
+// So move boundary term to RHS -> nu*int_{Gamma_h} g v
+
+// Here we assemble and solve directly (linear problem)
+problem Temperature(u, v, solver=UMFPACK) =
+    int2d(Th)( nu*(dx(u)*dx(v) + dy(u)*dy(v))
+               + (U1*dx(u) + U2*dy(u))*v )
+  - int1d(Th, labelGammah)( nu*1.0 * v )   // Neumann flux g = 1 on Gamma_h
+  + on(labelGamma0, u=0)                   // Dirichlet on Gamma_0
+  ;
+
+// Solve
+Temperature;
+
+// Plot
+plot(u, fill=true, value=true, cmm="Temperature u, nu="+nu, wait=1);

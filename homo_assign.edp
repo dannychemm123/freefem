@@ -1,0 +1,154 @@
+// homogenization_1d.edp
+// FreeFEM script to solve the coupled epsilon-problem in 1D on (0,1).
+//
+// System (1D, Dirichlet u=v=0 on endpoints):
+//   - d/dx ( a(x/eps) du/dx ) = k(x/eps) ( H * v - f0 )
+//   - d/dx ( b(x/eps) dv/dx ) = -k(x/eps) ( H * v - f0 )
+//
+// Triangular approach:
+//   (1) Solve for v:  -d(b dv/dx) + k H v = k f0
+//   (2) Solve for u:  -d(a du/dx) = k ( H v - f0 )
+//
+// Author: adapted for your problem
+
+// ----------------------
+// Parameters & functions
+// ----------------------
+real H = 2.0;
+
+// physical source f0(x)
+func real f0(real x) { return sin(pi*x); }
+
+// periodic coefficients defined in the fast variable y = x/eps
+func real a_y(real y) { return 1.0 + 0.5*sin(2*pi*y); }
+func real b_y(real y) { return 1.0 + 0.3*cos(2*pi*y); }
+func real k_y(real y) { return 1.0 + 0.5*sin(2*pi*y); }
+
+// epsilons to test
+real[int] epsList = [1./10., 1./20., 1./40., 1./100.];
+
+// discretization parameters (choose fine enough so h << smallest eps)
+int Nx = 1200;               // number of intervals -> Nx+1 nodes
+mesh Th = segment(Nx, [x]);  // Th has vertices x in [0,1]
+fespace Vh(Th, P1);
+
+// boundary labels for endpoints: by default segment gives 1 and 2
+// We'll enforce u=v=0 at both endpoints.
+
+// -------------------------
+// Compute homogenized data
+// -------------------------
+// We compute A_h = 1 / (int_0^1 1/a(y) dy) and similarly B_h, and k_bar = int_0^1 k(y) dy.
+// To integrate on the reference cell [0,1] we build a fine segment mesh.
+int Ncell = 2000;
+mesh Y = segment(Ncell, [x]); // parameter x runs 0..1 here; we'll treat x as y
+fespace VY(Y,P1);
+VY one = 1.0;
+
+// build discretized functions on Y for integrals
+VY Ay = a_y(x);
+VY By = b_y(x);
+VY Ky = k_y(x);
+
+// numerical integrals on Y (approximate)
+real InvAmean = int1d(Y)( 1.0 / Ay );   // ∫_0^1 1/a(y) dy
+real InvBmean = int1d(Y)( 1.0 / By );
+real Kbar = int1d(Y)( Ky );             // ∫_0^1 k(y) dy
+
+real A_h = 1.0 / InvAmean;
+real B_h = 1.0 / InvBmean;
+real k_bar = Kbar; // note int1d returns integral; since domain measure = 1, this is mean
+
+cout << "Homogenized constants:\n";
+cout << "  A_h = " << A_h << "\n";
+cout << "  B_h = " << B_h << "\n";
+cout << "  k_bar = " << k_bar << "\n\n";
+
+// -------------------------
+// Solve homogenized system
+// -------------------------
+// Solve (L_B + k_bar*H)*v0 = k_bar * f0
+// then L_A u0 = k_bar*(H*v0 - f0)
+// where L_A = -d/dx ( A_h * d/dx )
+// We implement as variational problems with Dirichlet BCs.
+
+Vh v0, u0, phi;
+varf v0var( [v0,phi] ) = int1d(Th)( B_h * dx(v0) * dx(phi) + k_bar*H * v0 * phi )
+                       - int1d(Th)( k_bar * f0(x) * phi );
+matrix Mv0 = v0var(Vh,Vh);
+real[int] rhs_v0 = v0var(0, Vh); // build RHS vector
+// Solve with homogeneous Dirichlet: use problem syntax to apply boundary conditions
+problem P_v0(v0, phi) = v0var + on(1,2, v0=0);
+P_v0; // solves v0
+
+// Now solve for u0: L_A u0 = k_bar * ( H*v0 - f0 )
+varf u0var( [u0,phi] ) = int1d(Th)( A_h * dx(u0) * dx(phi) )
+                       - int1d(Th)( k_bar * ( H * v0 - f0(x) ) * phi );
+problem P_u0( u0, phi, solver=CG ) = u0var + on(1,2, u0=0);
+P_u0;
+
+// precompute derivatives of homogenized solution (for later corrector if needed)
+Vh ux0 = dx(u0);
+Vh vx0 = dx(v0);
+
+// -------------------------
+// Main loop: solve eps-problem for each eps
+// -------------------------
+cout << "Running epsilon solves...\n";
+
+for (int i = 0; i < epsList.n; ++i){
+    real eps = epsList[i];
+    cout << "\n--- eps = " << eps << " ---\n";
+
+    // Build coefficient fields on the 1D physical mesh Th using x/eps
+    Vh a_eps = a_y(x/eps);
+    Vh b_eps = b_y(x/eps);
+    Vh k_eps = k_y(x/eps);
+
+    // (1) solve for v_eps:  int ( b_eps * dx(v)*dx(phi) + k_eps*H*v*phi ) = ∫ k_eps * f0 * phi
+    Vh veps, test;
+    varf vvar( [veps,test] ) = int1d(Th)( b_eps * dx(veps) * dx(test) + k_eps * H * veps * test )
+                            - int1d(Th)( k_eps * f0(x) * test );
+    problem P_veps( veps, test, solver=CG ) = vvar + on(1,2, veps=0);
+    P_veps;   // solve v_eps
+
+    // (2) solve for u_eps: int ( a_eps * dx(u)*dx(phi) ) = ∫ k_eps * ( H*v_eps - f0 ) * phi
+    Vh ueps;
+    varf uvar( [ueps,test] ) = int1d(Th)( a_eps * dx(ueps) * dx(test) )
+                            - int1d(Th)( k_eps * ( H * veps - f0(x) ) * test );
+    problem P_ueps( ueps, test, solver=CG ) = uvar + on(1,2, ueps=0);
+    P_ueps;   // solve u_eps
+
+    // compute error quantities (L2 and H1-type integrals)
+    // L2 errors: ∫ |u_eps - u0|^2, ∫ |v_eps - v0|^2
+    real L2_u = int1d(Th)( (ueps - u0)^2 );
+    real L2_v = int1d(Th)( (veps - v0)^2 );
+
+    // H1-type (energy) errors: ∫ |du_eps - du0|^2
+    real H1_u = int1d(Th)( (dx(ueps) - dx(u0))^2 );
+    real H1_v = int1d(Th)( (dx(veps) - dx(v0))^2 );
+
+    cout << "L2_u = " << L2_u << "   L2_v = " << L2_v << "\n";
+    cout << "H1_u = " << H1_u << "   H1_v = " << H1_v << "\n";
+
+    // OPTIONAL: Save solutions to files for plotting / postprocessing
+    // Save as .vtk for visualization with Paraview (or use plot)
+    // saves ueps and veps on the 1D mesh
+    string fname_u = "u_eps_" + string(eps) + ".vtk";
+    string fname_v = "v_eps_" + string(eps) + ".vtk";
+    savevtk(fname_u, Th, ueps, dataname="u_eps");
+    savevtk(fname_v, Th, veps, dataname="v_eps");
+
+    // quick 1D plots in FreeFEM window if you want
+    // plot(ueps, value=true, cmm="u_eps (x) -- eps=" + eps);
+    // plot(veps, value=true, cmm="v_eps (x) -- eps=" + eps);
+}
+
+// End for eps loop
+cout << "\nAll eps computed. Homogenized solution saved in variables u0, v0.\n";
+
+// Optional: save homogenized solutions
+savevtk("u0.vtk", Th, u0, dataname="u0");
+savevtk("v0.vtk", Th, v0, dataname="v0");
+
+// End of script
